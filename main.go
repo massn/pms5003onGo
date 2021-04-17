@@ -15,7 +15,10 @@ import (
 	"time"
 )
 
-const defaultTimeoutSeconds = 5
+const (
+	defaultTimeoutSeconds = 5
+	defaultPortPath       = "/dev/ttyAMA0"
+)
 
 type readingData struct {
 	acc     int
@@ -29,27 +32,43 @@ type twoBytesData struct {
 	low  byte
 }
 
+type Data struct {
+	PM1p0       int
+	PM2p5       int
+	PM10        int
+	PM1p0_atmos int
+	PM2p5_atmos int
+	PM10_atmos  int
+	B0p3        int
+	B0p5        int
+	B1p0        int
+	B2p5        int
+	B5p0        int
+	B10p0       int
+}
+
 func main() {
 	var (
-		v = flag.Bool("v", false, "verbose output")
-		t = flag.Int("t", defaultTimeoutSeconds, "timeout seconds")
+		v = flag.Bool("v", false, "verbose output.")
+		t = flag.Int("t", defaultTimeoutSeconds, "timeout seconds.")
+		p = flag.String("p", defaultPortPath, "port to read.")
 	)
 	flag.Parse()
 	if !(*v) {
 		log.SetOutput(ioutil.Discard)
 	}
-	resultsChan := make(chan []twoBytesData)
-	defer close(resultsChan)
-	go getData(resultsChan)
+	dataChan := make(chan *Data)
+	defer close(dataChan)
+	go getData(*p, dataChan)
 	select {
-	case results := <-resultsChan:
-		printResults(results)
+	case data := <-dataChan:
+		printResults(data)
 	case <-time.After((time.Duration)(*t) * time.Second):
 		fmt.Printf("%d seconds elapsed. timeout.\n", *t)
 	}
 }
 
-func getData(resultsChan chan []twoBytesData) {
+func getData(portPath string, dataChan chan *Data) {
 	options := serial.OpenOptions{
 		PortName:              "/dev/ttyAMA0",
 		BaudRate:              9600,
@@ -65,15 +84,15 @@ func getData(resultsChan chan []twoBytesData) {
 	}
 	defer port.Close()
 
-	data := &readingData{acc: 0, port: port, started: false}
+	rd := &readingData{acc: 0, port: port, started: false}
 
-	results := make([]twoBytesData, 13, 13)
+	tmp := make([]int, 13, 13)
 	for {
-		waitForStarting(data)
+		waitForStarting(rd)
 
 		log.Println("started to read")
 
-		if err := setFrameLength(data); err != nil {
+		if err := setFrameLength(rd); err != nil {
 			log.Printf("failed to set the frame length. reason:%v\n", err)
 			continue
 		}
@@ -83,39 +102,50 @@ func getData(resultsChan chan []twoBytesData) {
 
 		for i := 0; i <= 12; i++ {
 			d := get2BytesData(b[i*2 : i*2+2])
-			data.acc = data.acc + int(d.high) + int(d.low)
+			rd.acc = rd.acc + int(d.high) + int(d.low)
 			log.Printf("%d data: %#v\n", i, d)
-			results[i] = d
+			tmp[i] = d.num
 		}
 		c := get2BytesData(b[26:28])
-		log.Printf("acc:%d, checksum:%d\n", data.acc, c.num)
-		if int(data.acc) == c.num {
+		log.Printf("acc:%d, checksum:%d\n", rd.acc, c.num)
+		if int(rd.acc) == c.num {
 			break
 		}
 	}
-	resultsChan <- results
+	data := &Data{
+		PM1p0:       tmp[0],
+		PM2p5:       tmp[1],
+		PM10:        tmp[2],
+		PM1p0_atmos: tmp[3],
+		PM2p5_atmos: tmp[4],
+		PM10_atmos:  tmp[5],
+		B0p3:        tmp[6],
+		B0p5:        tmp[7],
+		B1p0:        tmp[8],
+		B2p5:        tmp[9],
+		B5p0:        tmp[10],
+		B10p0:       tmp[11],
+	}
+	dataChan <- data
 }
 
-func printResults(r []twoBytesData) {
-	if len(r) != 13 {
-		log.Fatalf("%d bad results length\n", len(r))
-	}
+func printResults(d *Data) {
 	micron := "um"
 	unitM3 := "ug/m^3"
 	unitL := "1/0.1L"
 	data := [][]string{
-		[]string{"PM1.0", strconv.Itoa(r[0].num), unitM3},
-		[]string{"PM2.5", strconv.Itoa(r[1].num), unitM3},
-		[]string{"PM10", strconv.Itoa(r[2].num), unitM3},
-		[]string{"PM1.0 in atomos env", strconv.Itoa(r[3].num), unitM3},
-		[]string{"PM2.5 in atmos env", strconv.Itoa(r[4].num), unitM3},
-		[]string{"PM10 in atmos env", strconv.Itoa(r[5].num), unitM3},
-		[]string{"0.3" + micron, strconv.Itoa(r[6].num), unitL},
-		[]string{"0.5" + micron, strconv.Itoa(r[7].num), unitL},
-		[]string{"1.0" + micron, strconv.Itoa(r[8].num), unitL},
-		[]string{"2.5" + micron, strconv.Itoa(r[9].num), unitL},
-		[]string{"5.0" + micron, strconv.Itoa(r[10].num), unitL},
-		[]string{"10" + micron, strconv.Itoa(r[11].num), unitL},
+		[]string{"PM1.0", strconv.Itoa(d.PM1p0), unitM3},
+		[]string{"PM2.5", strconv.Itoa(d.PM2p5), unitM3},
+		[]string{"PM10", strconv.Itoa(d.PM10), unitM3},
+		[]string{"PM1.0 in atmos env", strconv.Itoa(d.PM1p0_atmos), unitM3},
+		[]string{"PM2.5 in atmos env", strconv.Itoa(d.PM2p5_atmos), unitM3},
+		[]string{"PM10 in atmos env", strconv.Itoa(d.PM10_atmos), unitM3},
+		[]string{"0.3" + micron, strconv.Itoa(d.B0p3), unitL},
+		[]string{"0.5" + micron, strconv.Itoa(d.B0p5), unitL},
+		[]string{"1.0" + micron, strconv.Itoa(d.B1p0), unitL},
+		[]string{"2.5" + micron, strconv.Itoa(d.B2p5), unitL},
+		[]string{"5.0" + micron, strconv.Itoa(d.B5p0), unitL},
+		[]string{"10" + micron, strconv.Itoa(d.B10p0), unitL},
 	}
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader([]string{"Data", "Number", "Unit"})
