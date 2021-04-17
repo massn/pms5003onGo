@@ -99,19 +99,22 @@ func printResults(r []twoBytesData) {
 	if len(r) != 13 {
 		log.Fatalf("%d bad results length\n", len(r))
 	}
+	micron := "um"
+	unitM3 := "ug/m^3"
+	unitL := "1/0.1L"
 	data := [][]string{
-		[]string{"PM1.0", strconv.Itoa(r[0].num), "ug/m^3"},
-		[]string{"PM2.5", strconv.Itoa(r[1].num), "ug/m^3"},
-		[]string{"PM10", strconv.Itoa(r[2].num), "ug/m3"},
-		[]string{"PM1.0 in atomos env", strconv.Itoa(r[3].num), "ug/m^3"},
-		[]string{"PM2.5 in atmos env", strconv.Itoa(r[4].num), "ug/m^3"},
-		[]string{"PM10 in atmos env", strconv.Itoa(r[5].num), "ug/m^3"},
-		[]string{"0.3um", strconv.Itoa(r[6].num), "1/0.1L"},
-		[]string{"0.5um", strconv.Itoa(r[7].num), "1/0.1L"},
-		[]string{"1.0um", strconv.Itoa(r[8].num), "1/0.1L"},
-		[]string{"2.5um", strconv.Itoa(r[9].num), "1/0.1L"},
-		[]string{"5.0um", strconv.Itoa(r[10].num), "1/0.1L"},
-		[]string{"10um", strconv.Itoa(r[11].num), "1/0.1L"},
+		[]string{"PM1.0", strconv.Itoa(r[0].num), unitM3},
+		[]string{"PM2.5", strconv.Itoa(r[1].num), unitM3},
+		[]string{"PM10", strconv.Itoa(r[2].num), unitM3},
+		[]string{"PM1.0 in atomos env", strconv.Itoa(r[3].num), unitM3},
+		[]string{"PM2.5 in atmos env", strconv.Itoa(r[4].num), unitM3},
+		[]string{"PM10 in atmos env", strconv.Itoa(r[5].num), unitM3},
+		[]string{"0.3" + micron, strconv.Itoa(r[6].num), unitL},
+		[]string{"0.5" + micron, strconv.Itoa(r[7].num), unitL},
+		[]string{"1.0" + micron, strconv.Itoa(r[8].num), unitL},
+		[]string{"2.5" + micron, strconv.Itoa(r[9].num), unitL},
+		[]string{"5.0" + micron, strconv.Itoa(r[10].num), unitL},
+		[]string{"10" + micron, strconv.Itoa(r[11].num), unitL},
 	}
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader([]string{"Data", "Number", "Unit"})
