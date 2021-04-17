@@ -3,15 +3,19 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"flag"
 	"fmt"
 	"github.com/jacobsa/go-serial/serial"
+	"github.com/olekukonko/tablewriter"
 	"io"
+	"io/ioutil"
 	"log"
+	"os"
 	"strconv"
 	"time"
 )
 
-const waitSeconds = 2
+const defaultTimeoutSeconds = 5
 
 type readingData struct {
 	acc     int
@@ -20,13 +24,31 @@ type readingData struct {
 }
 
 type twoBytesData struct {
-	num  uint16
+	num  int
 	high byte
 	low  byte
 }
 
 func main() {
-	// Set up options.
+	var (
+		v = flag.Bool("v", false, "verbose output")
+		t = flag.Int("t", defaultTimeoutSeconds, "timeout seconds")
+	)
+	flag.Parse()
+	if !(*v) {
+		log.SetOutput(ioutil.Discard)
+	}
+	resultsChan := make(chan []twoBytesData)
+	go getData(resultsChan)
+	select {
+	case results := <-resultsChan:
+		printResults(results)
+	case <-time.After((time.Duration)(*t) * time.Second):
+		fmt.Printf("%d seconds elapsed. timeout.\n", *t)
+	}
+}
+
+func getData(resultsChan chan []twoBytesData) {
 	options := serial.OpenOptions{
 		PortName:              "/dev/ttyAMA0",
 		BaudRate:              9600,
@@ -36,16 +58,15 @@ func main() {
 		InterCharacterTimeout: 100,
 	}
 
-	// Open the port.
 	port, err := serial.Open(options)
 	if err != nil {
 		log.Fatalf("serial.Open: %v", err)
 	}
-	// Make sure to close it later.
 	defer port.Close()
 
 	data := &readingData{acc: 0, port: port, started: false}
 
+	results := make([]twoBytesData, 13, 13)
 	for {
 		waitForStarting(data)
 
@@ -58,24 +79,46 @@ func main() {
 		log.Println("get the frame length")
 
 		b := readExactBytes(28, port)
-		log.Printf("size of b : %d\n", len(b))
 
 		for i := 0; i <= 12; i++ {
 			d := get2BytesData(b[i*2 : i*2+2])
 			data.acc = data.acc + int(d.high) + int(d.low)
 			log.Printf("%d data: %#v\n", i, d)
+			results[i] = d
 		}
 		c := get2BytesData(b[26:28])
-		log.Printf("checksum : %#v\n", c)
 		log.Printf("acc:%d, checksum:%d\n", data.acc, c.num)
-		log.Printf("acc:%d, checksum:%d\n",
-			strconv.FormatInt(int64(data.acc), 2),
-			strconv.FormatInt(int64(c.num), 2))
-		if int(data.acc) == int(c.num) {
+		if int(data.acc) == c.num {
 			break
 		}
 	}
+	resultsChan <- results
+}
 
+func printResults(r []twoBytesData) {
+	if len(r) != 13 {
+		log.Fatalf("%d bad results length\n", len(r))
+	}
+	data := [][]string{
+		[]string{"PM1.0", strconv.Itoa(r[0].num), "ug/m^3"},
+		[]string{"PM2.5", strconv.Itoa(r[1].num), "ug/m^3"},
+		[]string{"PM10", strconv.Itoa(r[2].num), "ug/m3"},
+		[]string{"PM1.0 in atomos env", strconv.Itoa(r[3].num), "ug/m^3"},
+		[]string{"PM2.5 in atmos env", strconv.Itoa(r[4].num), "ug/m^3"},
+		[]string{"PM10 in atmos env", strconv.Itoa(r[5].num), "ug/m^3"},
+		[]string{"0.3um", strconv.Itoa(r[6].num), "1/0.1L"},
+		[]string{"0.5um", strconv.Itoa(r[7].num), "1/0.1L"},
+		[]string{"1.0um", strconv.Itoa(r[8].num), "1/0.1L"},
+		[]string{"2.5um", strconv.Itoa(r[9].num), "1/0.1L"},
+		[]string{"5.0um", strconv.Itoa(r[10].num), "1/0.1L"},
+		[]string{"10um", strconv.Itoa(r[11].num), "1/0.1L"},
+	}
+	table := tablewriter.NewWriter(os.Stdout)
+	table.SetHeader([]string{"Data", "Number", "Unit"})
+	for _, v := range data {
+		table.Append(v)
+	}
+	table.Render()
 }
 
 func waitForStarting(data *readingData) {
@@ -99,8 +142,6 @@ func waitForStarting(data *readingData) {
 			log.Println("get 0x4d")
 			data.acc += int(0x4d)
 			break
-		} else if b[0] == byte(0x00) {
-			continue
 		} else {
 			data.started = false
 			data.acc = 0
@@ -134,25 +175,28 @@ func get2BytesData(twoBytes []byte) twoBytesData {
 	if err := binary.Read(buf, binary.BigEndian, &read); err != nil {
 		log.Fatalf("failed ro read %x %x. reason:%v\n", twoBytes[0], twoBytes[1], err)
 	}
-	return twoBytesData{num: uint16(read), high: twoBytes[0], low: twoBytes[1]}
+	return twoBytesData{num: int(read), high: twoBytes[0], low: twoBytes[1]}
 }
 
 func readExactBytes(n int, port io.ReadWriteCloser) []byte {
-	for {
-		b := make([]byte, n, n)
-		readNum, err := port.Read(b)
-		if err != nil {
-			log.Fatalf("failed to read. reason:%v\n", err)
+	b := make([]byte, 1, 1)
+	result := make([]byte, n, n)
+	for i := 0; i < n; i++ {
+		for {
+			readNum, err := port.Read(b)
+			if err != nil {
+				log.Fatalf("failed to read. reason:%v\n", err)
+			}
+			log.Printf("read %x(0x%v)\n", b[0], uint16(b[0]))
+			if readNum < 1 {
+				log.Println("failed to read 1 byte")
+				log.Println("waiting 1 second\n")
+				time.Sleep(time.Second)
+				continue
+			}
+			break
 		}
-		log.Printf("read %v\n", b)
-		if readNum < n {
-			log.Printf("failed to read %d bytes. read just %d bytes.\n", n, readNum)
-			log.Printf("waiting %d seconds\n", waitSeconds)
-			time.Sleep(time.Second * waitSeconds)
-			return append(b[0:readNum], readExactBytes(n-readNum, port)...)
-		} else {
-			log.Printf("read %d bytes.\n", n)
-			return b
-		}
+		result[i] = b[0]
 	}
+	return result
 }
