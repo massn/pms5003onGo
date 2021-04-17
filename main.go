@@ -39,6 +39,7 @@ func main() {
 		log.SetOutput(ioutil.Discard)
 	}
 	resultsChan := make(chan []twoBytesData)
+	defer close(resultsChan)
 	go getData(resultsChan)
 	select {
 	case results := <-resultsChan:
