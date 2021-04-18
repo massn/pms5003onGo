@@ -1,6 +1,7 @@
 package main
 
 import (
+	"sync"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -29,9 +30,16 @@ func main() {
 	if !(*v) {
 		log.SetOutput(ioutil.Discard)
 	}
+
 	dataChan := make(chan *device.Data)
 	defer close(dataChan)
-	go device.GetData(*p, dataChan)
+	quitChan := make(chan struct{})
+	defer close(quitChan)
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	d := device.New(*p, &wg)
+	go device.GetData(d, dataChan, quitChan)
 	select {
 	case data := <-dataChan:
 		if *j {
@@ -45,7 +53,9 @@ func main() {
 	}
 	case <-time.After((time.Duration)(*t) * time.Second):
 		fmt.Printf("%d seconds elapsed. timeout.\n", *t)
+		quitChan <- struct{}{}
 	}
+	wg.Wait()
 }
 
 func printResults(d *device.Data) {

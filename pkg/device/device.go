@@ -1,6 +1,7 @@
 package device
 
 import(
+	"sync"
 	"time"
 	"encoding/binary"
 	"bytes"
@@ -30,6 +31,7 @@ type state struct {
 	acc     int
 	port    io.ReadWriteCloser
 	started bool
+	wg *sync.WaitGroup
 }
 
 type twoBytesData struct {
@@ -38,7 +40,7 @@ type twoBytesData struct {
 	low  byte
 }
 
-func GetData(portPath string, dataChan chan *Data) {
+func New(portPath string, wg *sync.WaitGroup)*state{
 	options := serial.OpenOptions{
 		PortName:              portPath,
 		BaudRate:              9600,
@@ -47,38 +49,55 @@ func GetData(portPath string, dataChan chan *Data) {
 		MinimumReadSize:       1,
 		InterCharacterTimeout: 100,
 	}
-
 	port, err := serial.Open(options)
 	if err != nil {
 		log.Fatalf("serial.Open: %v", err)
 	}
-	defer port.Close()
+	return &state{acc:0, port: port, started:false, wg: wg}
+}
 
-	rd := &state{acc: 0, port: port, started: false}
+func (s *state)Close(){
+	s.port.Close()
+}
 
+func GetData(s *state, dataChan chan *Data, quit chan struct{}) {
+	defer s.wg.Done()
+	defer s.Close()
 	tmp := make([]int, 13, 13)
 	for {
-		waitForStarting(rd)
-
+		select {
+		case <- quit:
+			return
+		default:
+		}
+		started := make(chan struct{})
+		defer close(started)
+		quitWFS := make(chan struct{})
+		defer close(quitWFS)
+		s.wg.Add(1)
+		go waitForStarting(s, started, quitWFS)
+		select {
+		case <- quit:
+			quitWFS <- struct{}{}
+			return
+		case <- started:
+		}
 		log.Println("started to read")
-
-		if err := setFrameLength(rd); err != nil {
+		if err := setFrameLength(s); err != nil {
 			log.Printf("failed to set the frame length. reason:%v\n", err)
 			continue
 		}
 		log.Println("get the frame length")
-
-		b := readExactBytes(28, port)
-
+		b := readExactBytes(28, s.port)
 		for i := 0; i <= 12; i++ {
 			d := get2BytesData(b[i*2 : i*2+2])
-			rd.acc = rd.acc + int(d.high) + int(d.low)
+			s.acc = s.acc + int(d.high) + int(d.low)
 			log.Printf("%d data: %#v\n", i, d)
 			tmp[i] = d.num
 		}
 		c := get2BytesData(b[26:28])
-		log.Printf("acc:%d, checksum:%d\n", rd.acc, c.num)
-		if int(rd.acc) == c.num {
+		log.Printf("acc:%d, checksum:%d\n", s.acc, c.num)
+		if int(s.acc) == c.num {
 			break
 		}
 	}
@@ -99,8 +118,15 @@ func GetData(portPath string, dataChan chan *Data) {
 	dataChan <- data
 }
 
-func waitForStarting(s *state) {
+func waitForStarting(s *state, started, quit chan struct{}){
+	defer s.wg.Done()
 	for {
+		select {
+		case <- quit:
+			return
+		default:
+		}
+
 		b := make([]byte, 1, 1)
 		n, err := s.port.Read(b)
 
@@ -119,7 +145,8 @@ func waitForStarting(s *state) {
 		} else if b[0] == byte(0x4d) {
 			log.Println("get 0x4d")
 			s.acc += int(0x4d)
-			break
+			started <- struct{}{}
+			return
 		} else {
 			s.started = false
 			s.acc = 0
