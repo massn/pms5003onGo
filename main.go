@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"github.com/olekukonko/tablewriter"
@@ -22,6 +23,7 @@ func main() {
 		v = flag.Bool("v", false, "verbose output.")
 		t = flag.Int("t", defaultTimeoutSeconds, "timeout seconds.")
 		p = flag.String("p", defaultPortPath, "port to read.")
+		j = flag.Bool("j", false, "json output.")
 	)
 	flag.Parse()
 	if !(*v) {
@@ -32,7 +34,15 @@ func main() {
 	go device.GetData(*p, dataChan)
 	select {
 	case data := <-dataChan:
+		if *j {
+			s, err := json.Marshal(data)
+			if err != nil{
+				log.Fatalf("failed to marshal to json. reason:%v\n",err)
+			}
+			fmt.Println(string(s))
+		}else{
 		printResults(data)
+	}
 	case <-time.After((time.Duration)(*t) * time.Second):
 		fmt.Printf("%d seconds elapsed. timeout.\n", *t)
 	}
@@ -49,12 +59,12 @@ func printResults(d *device.Data) {
 		{"PM1.0 in atmos env", strconv.Itoa(d.PM1p0_atmos), unitM3},
 		{"PM2.5 in atmos env", strconv.Itoa(d.PM2p5_atmos), unitM3},
 		{"PM10 in atmos env", strconv.Itoa(d.PM10_atmos), unitM3},
-		{"0.3" + micron, strconv.Itoa(d.B0p3), unitL},
-		{"0.5" + micron, strconv.Itoa(d.B0p5), unitL},
-		{"1.0" + micron, strconv.Itoa(d.B1p0), unitL},
-		{"2.5" + micron, strconv.Itoa(d.B2p5), unitL},
-		{"5.0" + micron, strconv.Itoa(d.B5p0), unitL},
-		{"10" + micron, strconv.Itoa(d.B10p0), unitL},
+		{"0.3" + micron, strconv.Itoa(d.D0p3), unitL},
+		{"0.5" + micron, strconv.Itoa(d.D0p5), unitL},
+		{"1.0" + micron, strconv.Itoa(d.D1p0), unitL},
+		{"2.5" + micron, strconv.Itoa(d.D2p5), unitL},
+		{"5.0" + micron, strconv.Itoa(d.D5p0), unitL},
+		{"10" + micron, strconv.Itoa(d.D10p0), unitL},
 	}
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader([]string{"Data", "Number", "Unit"})

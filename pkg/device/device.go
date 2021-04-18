@@ -12,18 +12,18 @@ import(
 
 
 type Data struct {
-	PM1p0       int
-	PM2p5       int
-	PM10        int
-	PM1p0_atmos int
-	PM2p5_atmos int
-	PM10_atmos  int
-	B0p3        int
-	B0p5        int
-	B1p0        int
-	B2p5        int
-	B5p0        int
-	B10p0       int
+	PM1p0       int `json:"pm1.0"`
+	PM2p5      int `json:"pm2.5"`
+	PM10        int `json:"pm10"`
+	PM1p0_atmos int `json:"pm1.0atmos"`
+	PM2p5_atmos int `json:"pm2.5atmos"`
+	PM10_atmos  int `json:"pm10atmos"`
+	D0p3        int `json:"dia0.3um"`
+	D0p5        int `json:"dia0.5um"`
+	D1p0        int `json:"dia1.0um"`
+	D2p5        int `json:"dia2.5um"`
+	D5p0      int `json:"dia5.0um"`
+	D10p0     int `json:"dia10.0um"`
 }
 
 type state struct {
@@ -89,12 +89,12 @@ func GetData(portPath string, dataChan chan *Data) {
 		PM1p0_atmos: tmp[3],
 		PM2p5_atmos: tmp[4],
 		PM10_atmos:  tmp[5],
-		B0p3:        tmp[6],
-		B0p5:        tmp[7],
-		B1p0:        tmp[8],
-		B2p5:        tmp[9],
-		B5p0:        tmp[10],
-		B10p0:       tmp[11],
+		D0p3:        tmp[6],
+		D0p5:        tmp[7],
+		D1p0:        tmp[8],
+		D2p5:        tmp[9],
+		D5p0:        tmp[10],
+		D10p0:       tmp[11],
 	}
 	dataChan <- data
 }
