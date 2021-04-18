@@ -35,7 +35,7 @@ func main() {
 	select {
 	case data := <-dataChan:
 		if *j {
-			s, err := json.Marshal(data)
+			s, err := json.MarshalIndent(data, "", "    ")
 			if err != nil{
 				log.Fatalf("failed to marshal to json. reason:%v\n",err)
 			}
