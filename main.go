@@ -1,51 +1,21 @@
 package main
 
 import (
-	"bytes"
-	"encoding/binary"
 	"flag"
 	"fmt"
-	"github.com/jacobsa/go-serial/serial"
 	"github.com/olekukonko/tablewriter"
-	"io"
 	"io/ioutil"
 	"log"
 	"os"
 	"strconv"
 	"time"
+	"github.com/massn/pms5003onGo/pkg/device"
 )
 
 const (
 	defaultTimeoutSeconds = 5
 	defaultPortPath       = "/dev/ttyAMA0"
 )
-
-type readingData struct {
-	acc     int
-	port    io.ReadWriteCloser
-	started bool
-}
-
-type twoBytesData struct {
-	num  int
-	high byte
-	low  byte
-}
-
-type Data struct {
-	PM1p0       int
-	PM2p5       int
-	PM10        int
-	PM1p0_atmos int
-	PM2p5_atmos int
-	PM10_atmos  int
-	B0p3        int
-	B0p5        int
-	B1p0        int
-	B2p5        int
-	B5p0        int
-	B10p0       int
-}
 
 func main() {
 	var (
@@ -57,9 +27,9 @@ func main() {
 	if !(*v) {
 		log.SetOutput(ioutil.Discard)
 	}
-	dataChan := make(chan *Data)
+	dataChan := make(chan *device.Data)
 	defer close(dataChan)
-	go getData(*p, dataChan)
+	go device.GetData(*p, dataChan)
 	select {
 	case data := <-dataChan:
 		printResults(data)
@@ -68,84 +38,23 @@ func main() {
 	}
 }
 
-func getData(portPath string, dataChan chan *Data) {
-	options := serial.OpenOptions{
-		PortName:              "/dev/ttyAMA0",
-		BaudRate:              9600,
-		DataBits:              8,
-		StopBits:              1,
-		MinimumReadSize:       1,
-		InterCharacterTimeout: 100,
-	}
-
-	port, err := serial.Open(options)
-	if err != nil {
-		log.Fatalf("serial.Open: %v", err)
-	}
-	defer port.Close()
-
-	rd := &readingData{acc: 0, port: port, started: false}
-
-	tmp := make([]int, 13, 13)
-	for {
-		waitForStarting(rd)
-
-		log.Println("started to read")
-
-		if err := setFrameLength(rd); err != nil {
-			log.Printf("failed to set the frame length. reason:%v\n", err)
-			continue
-		}
-		log.Println("get the frame length")
-
-		b := readExactBytes(28, port)
-
-		for i := 0; i <= 12; i++ {
-			d := get2BytesData(b[i*2 : i*2+2])
-			rd.acc = rd.acc + int(d.high) + int(d.low)
-			log.Printf("%d data: %#v\n", i, d)
-			tmp[i] = d.num
-		}
-		c := get2BytesData(b[26:28])
-		log.Printf("acc:%d, checksum:%d\n", rd.acc, c.num)
-		if int(rd.acc) == c.num {
-			break
-		}
-	}
-	data := &Data{
-		PM1p0:       tmp[0],
-		PM2p5:       tmp[1],
-		PM10:        tmp[2],
-		PM1p0_atmos: tmp[3],
-		PM2p5_atmos: tmp[4],
-		PM10_atmos:  tmp[5],
-		B0p3:        tmp[6],
-		B0p5:        tmp[7],
-		B1p0:        tmp[8],
-		B2p5:        tmp[9],
-		B5p0:        tmp[10],
-		B10p0:       tmp[11],
-	}
-	dataChan <- data
-}
-
-func printResults(d *Data) {
+func printResults(d *device.Data) {
 	micron := "um"
 	unitM3 := "ug/m^3"
 	unitL := "1/0.1L"
 	data := [][]string{
-		[]string{"PM1.0", strconv.Itoa(d.PM1p0), unitM3},
-		[]string{"PM2.5", strconv.Itoa(d.PM2p5), unitM3},
-		[]string{"PM10", strconv.Itoa(d.PM10), unitM3},
-		[]string{"PM1.0 in atmos env", strconv.Itoa(d.PM1p0_atmos), unitM3},
-		[]string{"PM2.5 in atmos env", strconv.Itoa(d.PM2p5_atmos), unitM3},
-		[]string{"PM10 in atmos env", strconv.Itoa(d.PM10_atmos), unitM3},
-		[]string{"0.3" + micron, strconv.Itoa(d.B0p3), unitL},
-		[]string{"0.5" + micron, strconv.Itoa(d.B0p5), unitL},
-		[]string{"1.0" + micron, strconv.Itoa(d.B1p0), unitL},
-		[]string{"2.5" + micron, strconv.Itoa(d.B2p5), unitL},
-		[]string{"5.0" + micron, strconv.Itoa(d.B5p0), unitL},
-		[]string{"10" + micron, strconv.Itoa(d.B10p0), unitL},
+		{"PM1.0", strconv.Itoa(d.PM1p0), unitM3},
+		{"PM2.5", strconv.Itoa(d.PM2p5), unitM3},
+		{"PM10", strconv.Itoa(d.PM10), unitM3},
+		{"PM1.0 in atmos env", strconv.Itoa(d.PM1p0_atmos), unitM3},
+		{"PM2.5 in atmos env", strconv.Itoa(d.PM2p5_atmos), unitM3},
+		{"PM10 in atmos env", strconv.Itoa(d.PM10_atmos), unitM3},
+		{"0.3" + micron, strconv.Itoa(d.B0p3), unitL},
+		{"0.5" + micron, strconv.Itoa(d.B0p5), unitL},
+		{"1.0" + micron, strconv.Itoa(d.B1p0), unitL},
+		{"2.5" + micron, strconv.Itoa(d.B2p5), unitL},
+		{"5.0" + micron, strconv.Itoa(d.B5p0), unitL},
+		{"10" + micron, strconv.Itoa(d.B10p0), unitL},
 	}
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader([]string{"Data", "Number", "Unit"})
@@ -153,84 +62,4 @@ func printResults(d *Data) {
 		table.Append(v)
 	}
 	table.Render()
-}
-
-func waitForStarting(data *readingData) {
-	for {
-		b := make([]byte, 1, 1)
-		n, err := data.port.Read(b)
-
-		if err != nil {
-			log.Fatalf("failed to read port. reason:%v\n", err)
-		}
-		if n != 1 {
-			log.Fatalf("failed to read 1 byte")
-		}
-		if !data.started {
-			if b[0] == byte(0x42) {
-				log.Println("get 0x42")
-				data.started = true
-				data.acc += int(0x42)
-			}
-		} else if b[0] == byte(0x4d) {
-			log.Println("get 0x4d")
-			data.acc += int(0x4d)
-			break
-		} else {
-			data.started = false
-			data.acc = 0
-		}
-	}
-}
-
-func setFrameLength(data *readingData) error {
-	frameLength, err := read2bytes(data.port)
-	if err != nil {
-		log.Println("failed to read the frame length.")
-		return err
-	}
-	if frameLength.num != 28 {
-		log.Printf("%d is a bad frame length\n", frameLength.num)
-		return fmt.Errorf("failed to get the right frame length.")
-	}
-	data.acc = data.acc + int(frameLength.high) + int(frameLength.low)
-	return nil
-}
-
-func read2bytes(port io.ReadWriteCloser) (twoBytesData, error) {
-	b := readExactBytes(2, port)
-	log.Printf("read %d(0x%x) %d(0x%x)\n", b[0], b[0], b[1], b[1])
-	return get2BytesData(b), nil
-}
-
-func get2BytesData(twoBytes []byte) twoBytesData {
-	var read uint16
-	buf := bytes.NewReader(twoBytes)
-	if err := binary.Read(buf, binary.BigEndian, &read); err != nil {
-		log.Fatalf("failed ro read %x %x. reason:%v\n", twoBytes[0], twoBytes[1], err)
-	}
-	return twoBytesData{num: int(read), high: twoBytes[0], low: twoBytes[1]}
-}
-
-func readExactBytes(n int, port io.ReadWriteCloser) []byte {
-	b := make([]byte, 1, 1)
-	result := make([]byte, n, n)
-	for i := 0; i < n; i++ {
-		for {
-			readNum, err := port.Read(b)
-			if err != nil {
-				log.Fatalf("failed to read. reason:%v\n", err)
-			}
-			log.Printf("read %x(0x%v)\n", b[0], uint16(b[0]))
-			if readNum < 1 {
-				log.Println("failed to read 1 byte")
-				log.Println("waiting 1 second\n")
-				time.Sleep(time.Second)
-				continue
-			}
-			break
-		}
-		result[i] = b[0]
-	}
-	return result
 }
