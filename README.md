@@ -1,2 +1,8 @@
 # pms5003onGo
-pms5003 client
+A library of "Plantower PMS 5003 Particulate Sensor" written in Go.
+
+## TODOs
+
+- refactor log uses
+- server mode
+
