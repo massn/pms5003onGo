@@ -31,38 +31,45 @@ func main() {
 		log.SetOutput(ioutil.Discard)
 	}
 
+	d := getDataInTime(*t, *p)
+	if *j {
+		s, err := json.MarshalIndent(d, "", "    ")
+			if err != nil{
+				log.Fatalf("failed to marshal to json. reason:%v\n",err)
+			}
+			fmt.Println(string(s))
+	}else{
+		if d.Err != nil {
+				fmt.Printf("failed to get data. reason:%v\n",d.Err)
+			}else{
+				printResults(d)
+			}
+	}
+}
+
+func getDataInTime(timeout int, portPath string)*device.Data{
 	dataChan := make(chan *device.Data)
 	defer close(dataChan)
 	quitChan := make(chan struct{})
 	defer close(quitChan)
 	var wg sync.WaitGroup
+	resultData := &device.Data{}
 
 	wg.Add(1)
-	d, err := device.New(*p, &wg)
+	d, err := device.New(portPath, &wg)
 	if err != nil{
 		panic(err)
 	}
 	go device.GetData(d, dataChan, quitChan)
 	select {
-	case data := <-dataChan:
-		if *j {
-			s, err := json.MarshalIndent(data, "", "    ")
-			if err != nil{
-				log.Fatalf("failed to marshal to json. reason:%v\n",err)
-			}
-			fmt.Println(string(s))
-		}else{
-			if data.Err != nil {
-				fmt.Printf("failed to get data. reason : %v\n",data.Err)
-			}else{
-				printResults(data)
-			}
-	}
-	case <-time.After((time.Duration)(*t) * time.Second):
-		fmt.Printf("%d seconds elapsed. timeout.\n", *t)
+	case resultData = <-dataChan:
+	case <-time.After((time.Duration)(timeout) * time.Second):
+		fmt.Printf("%d seconds elapsed. timeout.\n", timeout)
 		quitChan <- struct{}{}
+		resultData.Err = fmt.Errorf("timeout")
 	}
 	wg.Wait()
+	return resultData
 }
 
 func printResults(d *device.Data) {
