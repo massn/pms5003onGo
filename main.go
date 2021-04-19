@@ -38,7 +38,10 @@ func main() {
 	var wg sync.WaitGroup
 
 	wg.Add(1)
-	d := device.New(*p, &wg)
+	d, err := device.New(*p, &wg)
+	if err != nil{
+		panic(err)
+	}
 	go device.GetData(d, dataChan, quitChan)
 	select {
 	case data := <-dataChan:
@@ -49,7 +52,11 @@ func main() {
 			}
 			fmt.Println(string(s))
 		}else{
-		printResults(data)
+			if data.Err != nil {
+				fmt.Printf("failed to get data. reason : %v\n",data.Err)
+			}else{
+				printResults(data)
+			}
 	}
 	case <-time.After((time.Duration)(*t) * time.Second):
 		fmt.Printf("%d seconds elapsed. timeout.\n", *t)
