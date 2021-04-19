@@ -55,7 +55,6 @@ func getDataInTime(timeout int, portPath string)*device.Data{
 	var wg sync.WaitGroup
 	resultData := &device.Data{}
 
-	wg.Add(1)
 	d, err := device.New(portPath, &wg)
 	if err != nil{
 		panic(err)

@@ -11,7 +11,6 @@ import(
 	"github.com/jacobsa/go-serial/serial"
 )
 
-
 type Data struct {
 	PM1p0       int `json:"pm1.0"`
 	PM2p5      int `json:"pm2.5"`
@@ -55,16 +54,17 @@ func New(portPath string, wg *sync.WaitGroup)(*state, error){
 		log.Printf("failed to open port. reason : %v\n", err)
 		return &state{}, err
 	}
+	wg.Add(1)
 	return &state{acc:0, port: port, started:false, wg: wg}, nil
 }
 
-func (s *state)Close(){
+func (s *state)Stop(){
 	s.port.Close()
+	s.wg.Done()
 }
 
 func GetData(s *state, dataChan chan *Data, quit chan struct{}) {
-	defer s.wg.Done()
-	defer s.Close()
+	defer s.Stop()
 	tmp := make([]int, 13, 13)
 	var tmpErr error
 	for {
