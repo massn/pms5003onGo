@@ -1,7 +1,6 @@
 package main
 
 import (
-	"sync"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -10,8 +9,8 @@ import (
 	"log"
 	"os"
 	"strconv"
-	"time"
 	"github.com/massn/pms5003onGo/pkg/device"
+	"github.com/massn/pms5003onGo/pkg/util"
 )
 
 const (
@@ -31,7 +30,7 @@ func main() {
 		log.SetOutput(ioutil.Discard)
 	}
 
-	d := getDataInTime(*t, *p)
+	d := util.GetDataInTime(*t, *p)
 	if *j {
 		s, err := json.MarshalIndent(d, "", "    ")
 			if err != nil{
@@ -45,30 +44,6 @@ func main() {
 				printResults(d)
 			}
 	}
-}
-
-func getDataInTime(timeout int, portPath string)*device.Data{
-	dataChan := make(chan *device.Data)
-	defer close(dataChan)
-	quitChan := make(chan struct{})
-	defer close(quitChan)
-	var wg sync.WaitGroup
-	resultData := &device.Data{}
-
-	d, err := device.New(portPath, &wg)
-	if err != nil{
-		panic(err)
-	}
-	go device.GetData(d, dataChan, quitChan)
-	select {
-	case resultData = <-dataChan:
-	case <-time.After((time.Duration)(timeout) * time.Second):
-		fmt.Printf("%d seconds elapsed. timeout.\n", timeout)
-		quitChan <- struct{}{}
-		resultData.Err = fmt.Errorf("timeout")
-	}
-	wg.Wait()
-	return resultData
 }
 
 func printResults(d *device.Data) {
