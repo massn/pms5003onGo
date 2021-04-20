@@ -25,6 +25,6 @@ $ sudo ./pms5003onGo
 ```
 
 ## TODOs
-- refactor log uses
-- server mode
+- ~~refactor log uses~~
+- ~~server mode~~
 - refactor

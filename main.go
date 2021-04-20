@@ -10,39 +10,51 @@ import (
 	"os"
 	"strconv"
 	"github.com/massn/pms5003onGo/pkg/device"
+	"github.com/massn/pms5003onGo/pkg/server"
 	"github.com/massn/pms5003onGo/pkg/util"
 )
 
 const (
 	defaultTimeoutSeconds = 5
-	defaultPortPath       = "/dev/ttyAMA0"
+	defaultDevicePortName       = "/dev/ttyAMA0"
+	defaultPort = "8080"
 )
 
 func main() {
 	var (
 		v = flag.Bool("v", false, "verbose output.")
 		t = flag.Int("t", defaultTimeoutSeconds, "timeout seconds.")
-		p = flag.String("p", defaultPortPath, "port to read.")
+		d = flag.String("d", defaultDevicePortName, "device port to read.")
 		j = flag.Bool("j", false, "json output.")
+		s = flag.Bool("s", false, "server mode.")
+		p = flag.String("p", defaultPort, "server port.")
 	)
 	flag.Parse()
 	if !(*v) {
 		log.SetOutput(ioutil.Discard)
 	}
 
-	d := util.GetDataInTime(*t, *p)
-	if *j {
-		s, err := json.MarshalIndent(d, "", "    ")
-			if err != nil{
-				log.Fatalf("failed to marshal to json. reason:%v\n",err)
-			}
-			fmt.Println(string(s))
+	if *s {
+		server.Start(60, *t, *p,*d)
 	}else{
-		if d.Err != nil {
-				fmt.Printf("failed to get data. reason:%v\n",d.Err)
-			}else{
-				printResults(d)
-			}
+		commandMode(*t, *d, *j)
+	}
+}
+
+func commandMode(timeout int, devicePortName string, jsonOutput bool){
+	data := util.GetDataInTime(timeout, devicePortName)
+	if jsonOutput {
+		s, err := json.MarshalIndent(data, "", "    ")
+		if err != nil{
+			log.Fatalf("failed to marshal to json. reason:%v\n",err)
+		}
+		fmt.Println(string(s))
+	}else{
+		if data.Err != nil {
+			fmt.Printf("failed to get data. reason:%v\n",data.Err)
+		}else{
+			printResults(data)
+		}
 	}
 }
 

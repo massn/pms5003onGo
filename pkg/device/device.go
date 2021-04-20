@@ -12,18 +12,18 @@ import(
 )
 
 type Data struct {
-	PM1p0       int `json:"pm1.0"`
-	PM2p5      int `json:"pm2.5"`
+	PM1p0       int `json:"pm1p0"`
+	PM2p5      int `json:"pm2p5"`
 	PM10        int `json:"pm10"`
-	PM1p0_atmos int `json:"pm1.0atmos"`
-	PM2p5_atmos int `json:"pm2.5atmos"`
+	PM1p0_atmos int `json:"pm1p0atmos"`
+	PM2p5_atmos int `json:"pm2p5atmos"`
 	PM10_atmos  int `json:"pm10atmos"`
-	D0p3        int `json:"dia0.3um"`
-	D0p5        int `json:"dia0.5um"`
-	D1p0        int `json:"dia1.0um"`
-	D2p5        int `json:"dia2.5um"`
-	D5p0      int `json:"dia5.0um"`
-	D10p0     int `json:"dia10.0um"`
+	D0p3        int `json:"dia0p3um"`
+	D0p5        int `json:"dia0p5um"`
+	D1p0        int `json:"dia1p0um"`
+	D2p5        int `json:"dia2p5um"`
+	D5p0      int `json:"dia5p0um"`
+	D10p0     int `json:"dia10um"`
 	Err error
 }
 
@@ -32,6 +32,11 @@ type state struct {
 	port    io.ReadWriteCloser
 	started bool
 	wg *sync.WaitGroup
+}
+
+func (s *state)reset(){
+	s.acc = 0
+	s.started = false
 }
 
 type twoBytesData struct {
@@ -70,6 +75,7 @@ func GetData(s *state, dataChan chan *Data, quit chan struct{}) {
 	for {
 		select {
 		case <- quit:
+			dataChan <- &Data{Err:fmt.Errorf("timeout")}
 			return
 		default:
 		}
@@ -92,9 +98,10 @@ func GetData(s *state, dataChan chan *Data, quit chan struct{}) {
 		log.Println("started to read")
 		if err := setFrameLength(s); err != nil {
 			log.Printf("failed to set the frame length. reason:%v\n", err)
+			s.reset()
 			continue
 		}
-		log.Println("get the frame length")
+		log.Println("set the frame length")
 		b, err := readExactBytes(28, s.port)
 		if err != nil{
 			tmpErr = err
@@ -153,9 +160,11 @@ func waitForStarting(s *state, startErr chan error, quit chan struct{}){
 
 		if err != nil {
 			startErr <- fmt.Errorf("failed to read port. reason:%v\n", err)
+			return
 		}
 		if n != 1 {
 			startErr <- fmt.Errorf("failed to read 1 byte")
+			return
 		}
 		if !s.started {
 			if b[0] == byte(0x42) {
@@ -179,10 +188,12 @@ func setFrameLength(s *state) error {
 	frameLength, err := read2bytes(s.port)
 	if err != nil {
 		log.Println("failed to read the frame length.")
+		s.reset()
 		return err
 	}
 	if frameLength.num != 28 {
 		log.Printf("%d is a bad frame length\n", frameLength.num)
+		s.reset()
 		return fmt.Errorf("failed to get the right frame length.")
 	}
 	s.acc =s.acc + int(frameLength.high) + int(frameLength.low)
