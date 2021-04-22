@@ -30,13 +30,11 @@ type Data struct {
 type state struct {
 	acc     int
 	port    io.ReadWriteCloser
-	started bool
 	wg *sync.WaitGroup
 }
 
 func (s *state)reset(){
 	s.acc = 0
-	s.started = false
 }
 
 type twoBytesData struct {
@@ -60,7 +58,7 @@ func New(portPath string, wg *sync.WaitGroup)(*state, error){
 		return &state{}, err
 	}
 	wg.Add(1)
-	return &state{acc:0, port: port, started:false, wg: wg}, nil
+	return &state{acc:0, port: port, wg: wg}, nil
 }
 
 func (s *state)Stop(){
@@ -72,7 +70,7 @@ func GetData(s *state, dataChan chan *Data, quit chan struct{}) {
 	defer s.Stop()
 	tmp := make([]int, 13, 13)
 	var tmpErr error
-	for {
+	L: for {
 		select {
 		case <- quit:
 			dataChan <- &Data{Err:fmt.Errorf("timeout")}
@@ -83,18 +81,24 @@ func GetData(s *state, dataChan chan *Data, quit chan struct{}) {
 		defer close(startErr)
 		quitWFS := make(chan struct{})
 		defer close(quitWFS)
-		s.wg.Add(1)
-		go waitForStarting(s, startErr, quitWFS)
+		var wgs sync.WaitGroup
+		wgs.Add(1)
+		go waitForStarting(s, &wgs, startErr, quitWFS)
 		select {
 		case <- quit:
+			log.Println("got quit from")
 			quitWFS <- struct{}{}
+		    wgs.Wait()
 			return
 		case err :=<-startErr:
+			log.Printf("got startErr:%v\n", err)
 			if err != nil{
 				tmpErr = err
-				break
+		        wgs.Wait()
+				break L
 			}
 		}
+		wgs.Wait()
 		log.Println("started to read")
 		if err := setFrameLength(s); err != nil {
 			log.Printf("failed to set the frame length. reason:%v\n", err)
@@ -146,8 +150,10 @@ func GetData(s *state, dataChan chan *Data, quit chan struct{}) {
 	dataChan <- data
 }
 
-func waitForStarting(s *state, startErr chan error, quit chan struct{}){
-	defer s.wg.Done()
+func waitForStarting(s *state, startWG *sync.WaitGroup, startErr chan error, quit chan struct{}){
+	defer startWG.Done()
+	got42 := false
+	b := make([]byte, 1, 1)
 	for {
 		select {
 		case <- quit:
@@ -155,7 +161,6 @@ func waitForStarting(s *state, startErr chan error, quit chan struct{}){
 		default:
 		}
 
-		b := make([]byte, 1, 1)
 		n, err := s.port.Read(b)
 
 		if err != nil {
@@ -166,20 +171,22 @@ func waitForStarting(s *state, startErr chan error, quit chan struct{}){
 			startErr <- fmt.Errorf("failed to read 1 byte")
 			return
 		}
-		if !s.started {
+		if !got42 {
 			if b[0] == byte(0x42) {
 				log.Println("get 0x42")
-				s.started = true
+				got42 = true
 				s.acc += int(0x42)
 			}
-		} else if b[0] == byte(0x4d) {
-			log.Println("get 0x4d")
-			s.acc += int(0x4d)
-			startErr <- nil
-			return
 		} else {
-			s.started = false
-			s.acc = 0
+			if b[0] == byte(0x4d) {
+				log.Println("get 0x4d")
+				s.acc += int(0x4d)
+				startErr <- nil
+				return
+			} else {
+				got42 = false
+				s.acc = 0
+			}
 		}
 	}
 }

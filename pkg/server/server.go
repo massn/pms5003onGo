@@ -42,21 +42,22 @@ func Start(period, timeoutArg int, port, devicePortNameArg string)error{
 func getDataPeriodically(period int){
 	ticker := time.NewTicker(time.Duration(period) * time.Second)
 	for {
+		fmt.Println("server waiting ticker message.")
 		select{
 		case <-ticker.C:
 			log.Println("getting data by ticker")
 			data := util.GetDataInTime(timeout, devicePortName)
 			if data.Err != nil {
 				log.Println("not update the savedOutput")
-				continue
+				break
 			}
 			s := &serverData{PMS5003: data}
 			marshaled, err := json.MarshalIndent(s, "", "    ")
 			if err != nil {
 				log.Printf("failed to marshal to json. reason:%v\n",err)
+			    break
 			}
 			savedOutput = string(marshaled)
-		default:
 		}
 	}
 }
