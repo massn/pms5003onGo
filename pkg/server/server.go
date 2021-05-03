@@ -42,7 +42,7 @@ func Start(period, timeoutArg int, port, devicePortNameArg string)error{
 func getDataPeriodically(period int){
 	ticker := time.NewTicker(time.Duration(period) * time.Second)
 	for {
-		fmt.Println("server waiting ticker message.")
+		log.Println("server waiting ticker message.")
 		select{
 		case <-ticker.C:
 			log.Println("getting data by ticker")
